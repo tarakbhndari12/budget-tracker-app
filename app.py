@@ -6,20 +6,33 @@ import os
 from fpdf import FPDF
 import base64
 
+# ----- Streamlit Setup -----
 st.set_page_config(page_title="💰 Advanced Budget Tracker", layout="centered")
 
-# -- Logo and Title --
-st.image("https://i.imgur.com/jNNT4LE.png", width=80)
-st.markdown(
-    '''
-    <h1 style='text-align: center; color: #2E8B57;'>💼 Personal Budget Tracker</h1>
-    <p style='text-align: center; font-size:18px;'>Track, Analyze, and Take Charge of Your Finances</p>
-    <hr style='border-top: 1px solid #bbb;'/>
-    ''',
-    unsafe_allow_html=True
-)
+# Remove default empty image placeholder
+st.markdown("""
+    <style>
+        .css-1v0mbdj.e115fcil1 {display: none;}
+    </style>
+""", unsafe_allow_html=True)
 
-# --- USER LOGIN ---
+st.title("💸 Personal Budget Tracker")
+
+# ----- Developer-only User Tracking -----
+user_log_file = "user_log.txt"
+
+def log_user(username):
+    if os.path.exists(user_log_file):
+        with open(user_log_file, "r") as f:
+            existing_users = f.read().splitlines()
+    else:
+        existing_users = []
+
+    if username not in existing_users:
+        with open(user_log_file, "a") as f:
+            f.write(f"{username}\n")
+
+# ----- User Login -----
 st.sidebar.header("👤 User Login")
 username = st.sidebar.text_input("Enter your name to continue")
 
@@ -27,32 +40,23 @@ if not username:
     st.warning("Please enter your name in the sidebar to proceed.")
     st.stop()
 
+log_user(username)
+
 filename = f"{username.lower().replace(' ', '_')}_transactions.csv"
-users_file = "users.txt"
 
-# Save unique users for developer-only tracking
-if not os.path.exists(users_file):
-    with open(users_file, "w") as f:
-        f.write("")
-
-with open(users_file, "r") as f:
-    users = [line.strip() for line in f.readlines()]
-if username not in users:
-    with open(users_file, "a") as f:
-        f.write(f"{username}\n")
-
-# --- LOAD USER DATA ---
+# Load existing data or initialize
 if os.path.exists(filename):
     df = pd.read_csv(filename)
 else:
     df = pd.DataFrame(columns=["Date", "Type", "Category", "Amount"])
 
+# Ensure Date column is datetime
 if not df.empty:
     df["Date"] = pd.to_datetime(df["Date"])
 
 st.session_state["df"] = df
 
-# --- ADD NEW TRANSACTION ---
+# ----- Add Transaction -----
 with st.form("transaction_form"):
     st.subheader("➕ Add New Transaction")
     t_type = st.selectbox("Type", ["Income", "Expense"])
@@ -75,15 +79,16 @@ with st.form("transaction_form"):
             st.rerun()
         else:
             st.warning("Please enter valid details.")
-# --- EDIT / DELETE TRANSACTIONS ---
+
 df = st.session_state["df"]
 
+# ----- Edit/Delete Transactions -----
 if not df.empty:
     st.subheader("✏️ Edit or Delete Transactions")
     edited_index = st.selectbox(
         "Select a transaction to edit/delete",
         df.index,
-        format_func=lambda x: f"{df.at[x, 'Date'].date()} – {df.at[x, 'Type']} – {df.at[x, 'Category']} – Rs. {df.at[x, 'Amount']:.2f}"
+        format_func=lambda x: f"{df.at[x, 'Date'].date()} – {df.at[x, 'Type']} – {df.at[x, 'Category']} – Rs. {df.at[x, 'Amount']}"
     )
 
     col1, col2 = st.columns(2)
@@ -109,7 +114,7 @@ if not df.empty:
                 st.success("Transaction updated.")
                 st.rerun()
 
-# --- SUMMARY & CHARTS ---
+# ----- Dashboard -----
 if not df.empty:
     st.subheader("📋 Transaction History")
     st.dataframe(df.sort_values("Date"), use_container_width=True)
@@ -139,7 +144,7 @@ if not df.empty:
     trend = df.groupby(["Date", "Type"])["Amount"].sum().unstack().fillna(0)
     st.line_chart(trend)
 
-    # --- PDF REPORT ---
+    # ----- PDF Report Download -----
     st.subheader("📥 Download Report")
 
     def generate_pdf(dataframe, total_income, total_expenses, balance_amt):
