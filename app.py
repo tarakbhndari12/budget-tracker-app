@@ -7,22 +7,19 @@ from fpdf import FPDF
 import base64
 
 st.set_page_config(page_title="💰 Advanced Budget Tracker", layout="centered")
-st.title("💸 Personal Budget Tracker")
 
-# === Developer-only user log (hidden) ===
-USER_LOG_FILE = "user_log.txt"
+# -- Logo and Title --
+st.image("https://i.imgur.com/jNNT4LE.png", width=80)
+st.markdown(
+    '''
+    <h1 style='text-align: center; color: #2E8B57;'>💼 Personal Budget Tracker</h1>
+    <p style='text-align: center; font-size:18px;'>Track, Analyze, and Take Charge of Your Finances</p>
+    <hr style='border-top: 1px solid #bbb;'/>
+    ''',
+    unsafe_allow_html=True
+)
 
-def log_user(username):
-    if not os.path.exists(USER_LOG_FILE):
-        with open(USER_LOG_FILE, "w") as f:
-            f.write(username + "\n")
-    else:
-        with open(USER_LOG_FILE, "r+") as f:
-            existing_users = f.read().splitlines()
-            if username not in existing_users:
-                f.write(username + "\n")
-
-# === User session setup ===
+# --- USER LOGIN ---
 st.sidebar.header("👤 User Login")
 username = st.sidebar.text_input("Enter your name to continue")
 
@@ -30,12 +27,21 @@ if not username:
     st.warning("Please enter your name in the sidebar to proceed.")
     st.stop()
 
-username = username.strip().title()
-log_user(username)
-
 filename = f"{username.lower().replace(' ', '_')}_transactions.csv"
+users_file = "users.txt"
 
-# Load or initialize user data
+# Save unique users for developer-only tracking
+if not os.path.exists(users_file):
+    with open(users_file, "w") as f:
+        f.write("")
+
+with open(users_file, "r") as f:
+    users = [line.strip() for line in f.readlines()]
+if username not in users:
+    with open(users_file, "a") as f:
+        f.write(f"{username}\n")
+
+# --- LOAD USER DATA ---
 if os.path.exists(filename):
     df = pd.read_csv(filename)
 else:
@@ -46,7 +52,7 @@ if not df.empty:
 
 st.session_state["df"] = df
 
-# === Add Transaction ===
+# --- ADD NEW TRANSACTION ---
 with st.form("transaction_form"):
     st.subheader("➕ Add New Transaction")
     t_type = st.selectbox("Type", ["Income", "Expense"])
@@ -65,20 +71,19 @@ with st.form("transaction_form"):
             }
             st.session_state["df"] = pd.concat([st.session_state["df"], pd.DataFrame([new_data])], ignore_index=True)
             st.session_state["df"].to_csv(filename, index=False)
-            st.success(f"{t_type} of ₹{amount:.2f} added under '{category}'")
+            st.success(f"{t_type} of Rs. {amount:.2f} added under '{category}'")
             st.rerun()
         else:
             st.warning("Please enter valid details.")
-
+# --- EDIT / DELETE TRANSACTIONS ---
 df = st.session_state["df"]
 
-# === Edit or Delete Transactions ===
 if not df.empty:
     st.subheader("✏️ Edit or Delete Transactions")
     edited_index = st.selectbox(
         "Select a transaction to edit/delete",
         df.index,
-        format_func=lambda x: f"{df.at[x, 'Date'].date()} – {df.at[x, 'Type']} – {df.at[x, 'Category']} – ₹{df.at[x, 'Amount']:.2f}"
+        format_func=lambda x: f"{df.at[x, 'Date'].date()} – {df.at[x, 'Type']} – {df.at[x, 'Category']} – Rs. {df.at[x, 'Amount']:.2f}"
     )
 
     col1, col2 = st.columns(2)
@@ -104,7 +109,7 @@ if not df.empty:
                 st.success("Transaction updated.")
                 st.rerun()
 
-# === Summary, Charts, and Report ===
+# --- SUMMARY & CHARTS ---
 if not df.empty:
     st.subheader("📋 Transaction History")
     st.dataframe(df.sort_values("Date"), use_container_width=True)
@@ -114,10 +119,11 @@ if not df.empty:
     balance = income - expenses
 
     st.subheader("📊 Financial Summary")
-    st.markdown(f"**💰 Total Income:** ₹{income:.2f}")
-    st.markdown(f"**💸 Total Expenses:** ₹{expenses:.2f}")
-    st.markdown(f"**🧾 Current Balance:** ₹{balance:.2f}")
+    st.markdown(f"**💰 Total Income:** Rs. {income:.2f}")
+    st.markdown(f"**💸 Total Expenses:** Rs. {expenses:.2f}")
+    st.markdown(f"**🧾 Current Balance:** Rs. {balance:.2f}")
 
+    # Pie Chart
     st.subheader("📌 Category-wise Expense Breakdown")
     pie_data = df[df["Type"] == "Expense"].groupby("Category")["Amount"].sum()
     if not pie_data.empty:
@@ -128,10 +134,12 @@ if not df.empty:
     else:
         st.info("No expense data available.")
 
+    # Line Chart
     st.subheader("📈 Financial Trends Over Time")
     trend = df.groupby(["Date", "Type"])["Amount"].sum().unstack().fillna(0)
     st.line_chart(trend)
 
+    # --- PDF REPORT ---
     st.subheader("📥 Download Report")
 
     def generate_pdf(dataframe, total_income, total_expenses, balance_amt):
@@ -139,11 +147,12 @@ if not df.empty:
         pdf.add_page()
         pdf.set_font("Arial", size=12)
 
-        pdf.cell(200, 10, f"{username}'s Budget Report", ln=True, align="C")
+        pdf.cell(200, 10, f"{username.title()}'s Budget Report", ln=True, align="C")
         pdf.ln(10)
-        pdf.cell(200, 10, f"Total Income: ₹{total_income:.2f}", ln=True)
-        pdf.cell(200, 10, f"Total Expenses: ₹{total_expenses:.2f}", ln=True)
-        pdf.cell(200, 10, f"Current Balance: ₹{balance_amt:.2f}", ln=True)
+
+        pdf.cell(200, 10, f"Total Income: Rs. {total_income:.2f}", ln=True)
+        pdf.cell(200, 10, f"Total Expenses: Rs. {total_expenses:.2f}", ln=True)
+        pdf.cell(200, 10, f"Current Balance: Rs. {balance_amt:.2f}", ln=True)
         pdf.ln(10)
 
         pdf.set_font("Arial", size=10)
@@ -157,7 +166,7 @@ if not df.empty:
             pdf.cell(40, 10, str(row["Date"].date()), border=1)
             pdf.cell(30, 10, row["Type"], border=1)
             pdf.cell(60, 10, row["Category"], border=1)
-            pdf.cell(30, 10, f"{row['Amount']:.2f}", border=1)
+            pdf.cell(30, 10, f"Rs. {row['Amount']:.2f}", border=1)
             pdf.ln()
 
         output_path = f"{username.lower().replace(' ', '_')}_budget_report.pdf"
